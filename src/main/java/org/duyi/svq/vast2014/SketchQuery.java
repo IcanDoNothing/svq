@@ -21,7 +21,7 @@ public class SketchQuery {
 	private SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
 	
 	//检索的时间范围(每天一个点，就是点数)
-	private static final int NUM_CPOINTS = 25;//360;//5;
+	private static final int NUM_CPOINTS = 15;//360;//5;
 	 
 	private	int 	queryContentType = 0;//0检索全部数据、1检索某个特定数据、2检索某个特定时间段内的全部数据
 	private	String	queryContentString	=	null;
@@ -38,25 +38,30 @@ public class SketchQuery {
 	/**
 	 * @param args
 	 */
-	public static void main(String[] args) {		new SketchQuery().run();
+	public static void main(String[] args) {
+		new SketchQuery().run();
 	}
 
 	public ArrayList<Table> run() {
 		ArrayList<Table> tables = new ArrayList<Table>();
 		Table table = null;
         try {
-        	table = (new DelimitedTextTableReader()).readTable(ConstantsSVQ.PARSE_DATA);
+        	table = (new DelimitedTextTableReader()).readTable(ConstantsSVQ.QUERY_DATA);
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(1);
         }
 
         Iterator iter = table.tuplesReversed();
-        //search是笔迹归一化后的数组        
+                
         ArrayList<Point2D> search = query.getNormalize();//query.getPoints();//
         ArrayList<Tuple> source = new ArrayList<Tuple>();
         ArrayList<Tuple> allSource = new ArrayList<Tuple>();
         
+        ArrayList<ArrayList<Tuple>> match = new ArrayList<ArrayList<Tuple>>();
+        ArrayList<ArrayList<Tuple>> allMatchs = new ArrayList<ArrayList<Tuple>>();
+        
+        //若选中某股票则执行if,若选择全部股票all则执行else
         if(queryContentString != null){
             while(iter.hasNext()){            	
             	Tuple t = (Tuple)iter.next();
@@ -75,63 +80,68 @@ public class SketchQuery {
             	if(temp < minY)
             		minY = temp;
             }
-            
             similarity = new ArrayList<Double>();
-            //制定匹配序列长度
             for(int i = 0 ; i < source.size() - NUM_CPOINTS ; i++){
-            	for(int j = NUM_CPOINTS ; j < source.size() ; j++){
-            		if(j > 3 * NUM_CPOINTS){
-            			break;
-            		}else{
-            			try {
-    						ArrayList<Point2D> sourcePoints = getNormized(source, 
-    								i, i + j, minY, maxY, 800/(double)source.size());
-    						ArrayList<Point2D> p = getRegression(sourcePoints);
-    	    				similarity.add(computeSimilarity(p, search));
-    					} catch (ParseException e) {
-    						// TODO Auto-generated catch block
-    						e.printStackTrace();
-    					}
+            	for(int j = NUM_CPOINTS ; j < 1.2 * NUM_CPOINTS && i + j < source.size() ; j++){
+            		try {
+						ArrayList<Point2D> sourcePoints = getNormized(source, 
+								i, i + j , minY, maxY, 800/(double)source.size());
+						ArrayList<Point2D> p = getRegression(sourcePoints);
+	    				similarity.add(computeSimilarity(p, search));
+					} catch (ParseException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+            		ArrayList<Tuple> a = new ArrayList<Tuple>();
+            		for(int k = i ; k < i + j ; k++){
+            			a.add(source.get(k));
             		}
-            		
+            		//match的大小应该和similarity的大小是一样的，similarity的值对应match的序列
+            		match.add(a);
             	}
             }
-//            for(int i = 0; i < source.size()-NUM_CPOINTS; i ++){
-//            	try {
-//            		//sourcePoints是时间和股价的归一结果,归一化的时间点和股价
-//    				ArrayList<Point2D> sourcePoints = getNormized(source, 
-//    						i, i + NUM_CPOINTS, minY, maxY, 800/(double)source.size());
-//    				//数组sourcePoints的X,Y的归一化结果
-//    				ArrayList<Point2D> p = getRegression(sourcePoints);
-//    				similarity.add(computeSimilarity(p, search));
-//    			} catch (ParseException e) {
-//    				e.printStackTrace();
-//    			}
-//            }
+
+//          for(int i = 0; i < source.size()-NUM_CPOINTS; i ++){
+//          	try {
+//          		//sourcePoints是时间和股价的归一结果,归一化的时间点和股价
+//  				ArrayList<Point2D> sourcePoints = getNormized(source, 
+//  						i, i + NUM_CPOINTS, minY, maxY, 800/(double)source.size());
+//  				//数组sourcePoints的X,Y的归一化结果
+//  				ArrayList<Point2D> p = getRegression(sourcePoints);
+//  				similarity.add(computeSimilarity(p, search));
+//  			} catch (ParseException e) {
+//  				e.printStackTrace();
+//  			}
+//          }
         }else{
 	        Tuple tuple = null;
 	        String previousQuery = "";//上一个检索的股票
+	        //第一支股票的名称
 	        if(iter.hasNext()){
 	        	tuple = (Tuple)iter.next();
 	        	previousQuery = tuple.getString("stock_symbol");
 	        	source.add(tuple);	    
-	        	allSource.add(tuple);
+//	        	allSource.add(tuple);
 	        }
+//	        System.out.println("source的大小：" + source.size());
+//	        System.out.println("allsource的大小：" + allSource.size());
 	        similarity = new ArrayList<Double>();
-	        while(iter.hasNext()){      
+	        while(iter.hasNext()){
 	        	tuple = (Tuple)iter.next();
+	        	//如果本条数据和上一条数据不属同一支股票，则将股票跟踪信号更新
 	        	if(!tuple.getString("stock_symbol").equals(previousQuery)){
 	        		source = new ArrayList<Tuple>();
 	        		previousQuery = tuple.getString("stock_symbol");
 	        	}
-	        	
+	        	//将本支股票的数据分别存入source和allSource（存储所有股票数据）
 	        	while(iter.hasNext() && tuple.getString("stock_symbol").equals(previousQuery)){
 	        		source.add(tuple);	        		
-	        		allSource.add(tuple);
+//	        		allSource.add(tuple);
 	        		previousQuery = tuple.getString("stock_symbol");
 	        		tuple = (Tuple)iter.next();
 	        	}
-	//        	System.out.println("one loop："+source.size());
+	        	
+//	        	System.out.println("one loop："+source.size());
 	            //这段代码用来把实际数值的y轴的最大值最小值求出来
 	            double maxY = source.get(0).getDouble(yalabel),
 	            		minY= source.get(0).getDouble(yalabel);
@@ -141,26 +151,26 @@ public class SketchQuery {
 	            		maxY = temp;
 	            	if(temp < minY)
 	            		minY = temp;
-	            }            
-	            
+	            }
 	            for(int i = 0 ; i < source.size() - NUM_CPOINTS ; i++){
-	            	for(int j = NUM_CPOINTS ; j < source.size() ; j++){
-	            		if(j > 3 * NUM_CPOINTS){
-	            			break;
-	            		}else{
-	            			try {
-	    						ArrayList<Point2D> sourcePoints = getNormized(source, 
-	    								i, i + j, minY, maxY, 800/(double)source.size());
-	    						ArrayList<Point2D> p = getRegression(sourcePoints);
-	    	    				similarity.add(computeSimilarity(p, search));
-	    					} catch (ParseException e) {
-	    						// TODO Auto-generated catch block
-	    						e.printStackTrace();
-	    					}
+	            	for(int j = NUM_CPOINTS ; j < 1.2 * NUM_CPOINTS && i + j < source.size() ; j++){
+	            		try {
+							ArrayList<Point2D> sourcePoints = getNormized(source, 
+									i, i + j, minY, maxY, 800/(double)source.size());
+							ArrayList<Point2D> p = getRegression(sourcePoints);
+		    				similarity.add(computeSimilarity(p, search));
+						} catch (ParseException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+	            		ArrayList<Tuple> a = new ArrayList<Tuple>();
+	            		for(int k = i ; k < i + j ; k++){
+	            			a.add(source.get(k));
 	            		}
+//	            		match.add(a);
+	            		allMatchs.add(a);
 	            	}
 	            }
-	            
 //	            for(int i = 0; i < source.size()-NUM_CPOINTS; i ++){
 //	            	try {
 //	    				ArrayList<Point2D> sourcePoints = getNormized(source, 
@@ -170,7 +180,7 @@ public class SketchQuery {
 //	    			} catch (ParseException e) {
 //	    				e.printStackTrace();
 //	    			}
-//	            }            
+//	            }    
 	        }
         }
         
@@ -186,6 +196,7 @@ public class SketchQuery {
 	        }
 //	        System.out.println("min:"+min+"::"+"max:"+max);
 	        int indexOfMin = similarity.indexOf(min);
+//	        System.out.println("最小相似度：" + similarity.get(indexOfMin));
 	        if(indexOfMin == -1)
 	        	continue;
 	        Table tt = new Table();
@@ -197,14 +208,26 @@ public class SketchQuery {
 	        	types[i] = table.getSchema().getColumnType(i);
 	        	tt.addColumn(names[i], types[i]);
 	        } 
+//	        System.out.println("source: "+source.size() + "   " + "allSource: " + allSource.size()
+//	        		+ "   " + "indexOfMin: " + indexOfMin);
 	        if(queryContentString != null){
-		        for(int i = indexOfMin ; i < indexOfMin+NUM_CPOINTS; i ++){
-		        	tt.addTuple(source.get(i));
-		        }
+//		        for(int i = indexOfMin ; i < indexOfMin+NUM_CPOINTS; i ++){
+//		        	tt.addTuple(source.get(i));
+//		        }
+	        	ArrayList<Tuple> a = new ArrayList<Tuple>();
+	        	a = match.get(indexOfMin);
+	        	for(Tuple d : a ){
+	        		tt.addTuple(d);
+	        	}
 	        }else{
-		        for(int i = indexOfMin ; i < indexOfMin+NUM_CPOINTS; i ++){
-		        	tt.addTuple(allSource.get(i));
-		        }
+//		        for(int i = indexOfMin ; i < indexOfMin+NUM_CPOINTS; i ++){
+//		        	tt.addTuple(allSource.get(i));
+//		        }
+	        	ArrayList<Tuple> a = new ArrayList<Tuple>();
+	        	a = allMatchs.get(indexOfMin);
+	        	for(Tuple d : a ){
+	        		tt.addTuple(d);
+	        	}
 	        }
 	        tables.add(tt);
 	        similarity.remove(indexOfMin);
@@ -263,124 +286,8 @@ public class SketchQuery {
 	 * @param search
 	 * @return
 	 */
-	//欧式距离
-	/*private double computeSimilarity(ArrayList<Point2D> sourcePoints,
+	private double computeSimilarity(ArrayList<Point2D> sourcePoints,
 			ArrayList<Point2D> search) {
-		ArrayList<Double> r1 = computeArray(sourcePoints);
-		ArrayList<Double> r2 = computeArray(search);
-		double sum = 0;
-		for(int i = 0; i < r1.size(); i ++){
-			sum += (r1.get(i)-r2.get(i))*(r1.get(i)-r2.get(i));
-		}
-//		for(int i = 0; i < search.size(); i ++){
-//			sum += 
-//			(sourcePoints.get(i).getX()-search.get(i).getX())*(sourcePoints.get(i).getX()-search.get(i).getX())+
-//			(sourcePoints.get(i).getY()-search.get(i).getY())*(sourcePoints.get(i).getY()-search.get(i).getY());
-//		}
-//		System.out.println("===");
-		return Math.sqrt(sum);
-	}*/
-	private double min(double x,double y,double z) {
-		double a = (x<=y)? x:y;
-		return (a<=z)? a:z;
-	}
-	
-	//基本DTW距离
-	/*private double computeSimilarity(ArrayList<Point2D> sourcePoints,
-			ArrayList<Point2D> search) {
-		ArrayList<Double> r1 = computeArray(sourcePoints);//源序列
-		ArrayList<Double> r2 = computeArray(search);//目标序列
-		double D1,D2,D3;
-		double sum = 0;
-		double[][] distance;//DTW距离矩阵
-		double[][] disE;//累计距离矩阵
-		
-		distance = new double[r1.size()][r2.size()];
-		disE = new double[r1.size()][r2.size()];
-		
-		for(int i = 0; i < r1.size(); i ++){
-			for(int j = 0;j < r2.size();j++) {
-				disE[i][j] = Double.MAX_VALUE;
-				double a = r1.get(i) - r2.get(j);
-				distance[i][j] = a*a;//Math.abs(a);
-			}
-		}
-		disE[0][0] = distance[0][0];
-		for(int i = 1; i < r1.size(); i ++){
-				for(int j = 0;j < r2.size();j++) {
-					D1 = distance[i-1][j];
-					if (j>0) {
-						D2 = distance[i-1][j-1];
-					}else {
-						D2 = Double.MAX_VALUE;
-					}
-					if (j>1) {
-						D3 = 2 * distance[i-1][j-2];
-					}else {
-						D3 = Double.MAX_VALUE;
-					}
-					disE[i][j] = min(D1,D2,D3) + distance[i][j];
-				}
-		}
-		sum = disE[r1.size()-1][r2.size()-1];
-		return sum;
-	}*/
-	//带约束的DTW距离
-	/*private double computeSimilarity(ArrayList<Point2D> sourcePoints,
-			ArrayList<Point2D> search) {
-		ArrayList<Double> r1 = computeArray(sourcePoints);//待搜索序列
-		ArrayList<Double> r2 = computeArray(search);//目标序列
-		double xa;
-		double D1,D2,D3;
-		double sum = 0;
-		double[][] distance;//DTW距离矩阵
-		double[][] disE;//累计距离矩阵
-		
-		xa = Math.round( r1.size() / 3 );
-		if(r1.size() == r2.size()){
-			System.out.println("yes");
-		}
-		
-		distance = new double[r1.size()][r2.size()];
-		disE = new double[r1.size()][r2.size()];
-		
-		for(int i = 0; i < r1.size(); i ++){
-			for(int j = 0;j < r2.size();j++) {
-				disE[i][j] = Double.MAX_VALUE;
-				double a = r1.get(i) - r2.get(j);
-				distance[i][j] = a*a;//Math.abs(a);
-			}
-		}
-		disE[0][0] = distance[0][0];
-		for(int i = 1; i < r1.size(); i ++){
-				for(int j = 0;j < r2.size();j++) {
-					if(j > ((r1.size() / r2.size()) * i + xa)
-							|| j < ((r1.size() / r2.size()) * i - xa)){
-						continue;
-					}else{
-						D1 = distance[i-1][j];
-						if (j>0) {
-							D2 = distance[i-1][j-1];
-						}else {
-							D2 = Double.MAX_VALUE;
-						}
-						if (j>1) {
-							D3 = 2 * distance[i-1][j-2];
-						}else {
-							D3 = Double.MAX_VALUE;
-						}
-						disE[i][j] = min(D1,D2,D3) + distance[i][j];
-					}
-				}
-		}
-		sum = disE[r1.size()-1][r2.size()-1];
-		return sum;
-	}*/
-	//这段后续主要修改部分
-	/**/private double computeSimilarity(ArrayList<Point2D> sourcePoints,
-			ArrayList<Point2D> search) {
-//		ArrayList<Double> r1 = computeArray(sourcePoints);//目标序列
-//		ArrayList<Double> r2 = computeArray(search);//待搜索序列
 		ArrayList<Double> r1 = computeArray2(sourcePoints);//待搜索序列
 		ArrayList<Double> r2 = computeArray2(search);//目标序列
 //		for(double d: r1){
@@ -392,14 +299,12 @@ public class SketchQuery {
 //		}
 //		System.out.println("end r2");
 		
-		System.out.print("r1的大小：" + r1.size() + "       " + "r2的大小：" + r2.size() + "      ");
-		double xa;
+//		System.out.print("r1的大小：" + r1.size() + "       " + "r2的大小：" + r2.size() + "      ");
+		
 		double D1,D2,D3;
 		double sum = 0;
 		double[][] distance;//DTW距离矩阵
 		double[][] disE;//累计距离矩阵
-		
-		xa = Math.round( r1.size() / 3 );
 		
 		distance = new double[r1.size()][r2.size()];
 		disE = new double[r1.size()][r2.size()];
@@ -408,19 +313,14 @@ public class SketchQuery {
 			for(int j = 0;j < r2.size();j++) {
 				disE[i][j] = Double.MAX_VALUE;
 				double a = r1.get(i) - r2.get(j);
-				distance[i][j] = a*a;//Math.abs(a);
+				distance[i][j] = a*a; //Math.abs(a);
 			}
 		}
 		disE[0][0] = distance[0][0];
 		for(int i = 1; i < r1.size(); i ++){
 				for(int j = 0;j < r2.size();j++) {
-//					if(j > ((r1.size() / r2.size()) * i + xa)
-//							|| j < ((r1.size() / r2.size()) * i - xa)){
-//						continue;
-//					}else{
 					if(i > 0 ){
 						D1 = disE[i-1][j];
-						
 					}else{
 						D1 = Double.MAX_VALUE;
 					}
@@ -435,19 +335,17 @@ public class SketchQuery {
 						D3 = disE[0][0];
 					}
 					disE[i][j] = min(D1,D2,D3) + distance[i][j];
-//					}
 				}
 		}
 		sum = disE[r1.size()-1][r2.size()-1];
-		System.out.println("相似度"+sum);
+//		System.out.println("相似度"+sum);
 		return sum;
 	}
-
-	/**
-	 * 获取点的y坐标集合
-	 * @param sourcePoints
-	 * @return
-	 */
+	private double min(double x,double y,double z) {
+		double a = (x<=y)? x:y;
+		return (a<=z)? a:z;
+	}
+	
 	private ArrayList<Double> computeArray2(ArrayList<Point2D> sourcePoints) {
 		ArrayList<Double> result = new ArrayList<Double>();
 		for(Point2D p : sourcePoints){
@@ -562,17 +460,14 @@ public class SketchQuery {
 	 * @param minYAll 
 	 * unitWidth 一个时间单位(一天)的屏幕宽度
 	 * @return
-	 * @throws ParseException 
+	 * @throws java.text.ParseException
 	 */
 	private ArrayList<Point2D> getNormized(ArrayList<Tuple> source, int i,
 			int j, double minYAll, double maxYAll,double unitWidth) throws ParseException {
-		//先把第一个点设置成最大值和最小值		
+				
 		double maxY = source.get(i).getDouble(yalabel);
 		double minY = source.get(i).getDouble(yalabel);
-		
-		//依次比较i到j之间的收盘价与max和min之间的大小并更新
-		for(int index = i+1; index < j; index ++){
-			if(source.get(index).getDouble(yalabel) > maxY)
+		for(int index = i + 1; index < j; index ++){
 				maxY = source.get(index).getDouble(yalabel);
 			if(source.get(index).getDouble(yalabel) < minY)
 				minY = source.get(index).getDouble(yalabel);
@@ -583,17 +478,14 @@ public class SketchQuery {
 		double ratio = screenY/screenX;
 		
 		ArrayList<Point2D> result = new ArrayList<Point2D>();
-		//总的时间范围
 		long maxT = df.parse(source.get(j-1).get("date").toString()).getTime();
 		long minT = df.parse(source.get(i).get("date").toString()).getTime();
-		//每一时刻的股价
 		for(int index = i; index < j; index ++){
 			long t1 = df.parse(source.get(index).get("date").toString()).getTime();
 			double ty = source.get(index).getDouble(yalabel);
-			long t = t1-minT;//时间长度
+			long t = t1-minT;
 //			System.out.println(source.get(index).get("date")+":t1:"+t1);
-			result.add(new Point2D.Double((double)t/(double)(maxT-minT), 
-					(double)(ty-minY)*ratio/(maxY-minY)));//600));//(double)(maxY-minY)));
+			result.add(new Point2D.Double((double)t/(double)(maxT-minT), (double)(ty-minY)*ratio/(maxY-minY)));//600));//(double)(maxY-minY)));
 //			System.out.println(new Point2D.Double((double)t/(double)(maxT-minT), (double)(ty-minY)*ratio/(maxYAll-minY)));//(double)(maxY-minY)));
 		}
 		return result;
